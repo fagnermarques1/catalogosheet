@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controle de Equipamentos - MAP Test</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f6f8;
+    color: #222;
+    padding: 16px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 16px; text-align: center; }
+  .tabs {
+    display: flex;
+    margin-bottom: 16px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #d0d7de;
+  }
+  .tab {
+    flex: 1;
+    padding: 12px;
+    text-align: center;
+    background: #fff;
+    cursor: pointer;
+    font-weight: 600;
+    border: none;
+    font-size: 1rem;
+  }
+  .tab.active { background: #0969da; color: #fff; }
+  .panel {
+    background: #fff;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid #d0d7de;
+    margin-bottom: 16px;
+  }
+  .panel.hidden { display: none; }
+  label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  input {
+    width: 100%;
+    padding: 12px;
+    font-size: 1.1rem;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    margin-bottom: 12px;
+  }
+  input:focus { outline: 2px solid #0969da; border-color: #0969da; }
+  button.primary {
+    width: 100%;
+    padding: 14px;
+    font-size: 1rem;
+    background: #0969da;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary:hover { background: #0860c4; }
+  button.danger { background: #cf222e; }
+  button.danger:hover { background: #b41d28; }
+  .msg {
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-size: 0.95rem;
+  }
+  .msg.ok { background: #dafbe1; color: #1a7f37; border: 1px solid #1a7f37; }
+  .msg.err { background: #ffebe9; color: #cf222e; border: 1px solid #cf222e; }
+  .msg.hidden { display: none; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 0.95rem;
+  }
+  th, td {
+    padding: 10px 8px;
+    text-align: left;
+    border-bottom: 1px solid #eaeef2;
+  }
+  th { background: #f6f8fa; font-size: 0.85rem; text-transform: uppercase; }
+  td.actions { width: 1%; white-space: nowrap; }
+  td.actions button {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    background: #cf222e;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .count {
+    font-size: 0.85rem;
+    color: #57606a;
+    margin-bottom: 8px;
+  }
+  .empty {
+    text-align: center;
+    color: #57606a;
+    padding: 20px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<h1>Controle de Equipamentos — MAP Test</h1>
+
+<div class="tabs">
+  <button class="tab active" data-tab="vincular">Vincular</button>
+  <button class="tab" data-tab="devolver">Devolver</button>
+  <button class="tab" data-tab="lista">Em uso</button>
+</div>
+
+<!-- Vincular -->
+<div class="panel" id="panel-vincular">
+  <div class="msg hidden" id="msg-vincular"></div>
+  <form id="form-vincular" autocomplete="off">
+    <label for="v-equip">Código do equipamento (bipar ou digitar)</label>
+    <input type="text" id="v-equip" inputmode="text" autofocus required>
+
+    <label for="v-sala">Sala</label>
+    <input type="text" id="v-sala" inputmode="text" required>
+
+    <button type="submit" class="primary">Vincular</button>
+  </form>
+</div>
+
+<!-- Devolver -->
+<div class="panel hidden" id="panel-devolver">
+  <div class="msg hidden" id="msg-devolver"></div>
+  <form id="form-devolver" autocomplete="off">
+    <label for="d-equip">Código do equipamento (bipar ou digitar)</label>
+    <input type="text" id="d-equip" inputmode="text" required>
+    <button type="submit" class="primary danger">Devolver</button>
+  </form>
+</div>
+
+<!-- Lista -->
+<div class="panel hidden" id="panel-lista">
+  <div class="count" id="count"></div>
+  <div id="lista-conteudo"></div>
+</div>
+
+<script>
+const STORAGE_KEY = 'map_equipamentos_v1';
+
+function load() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function save(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function normaliza(s) {
+  return (s || '').trim().toUpperCase();
+}
+
+function mostraMsg(id, texto, tipo) {
+  const el = document.getElementById(id);
+  el.textContent = texto;
+  el.className = 'msg ' + tipo;
+  setTimeout(() => { el.className = 'msg hidden'; }, 3500);
+}
+
+function vincular(equip, sala) {
+  equip = normaliza(equip);
+  sala = normaliza(sala);
+  if (!equip || !sala) return { ok: false, msg: 'Preencha equipamento e sala.' };
+  const data = load();
+  if (data[equip]) {
+    return { ok: false, msg: `Equipamento ${equip} já está vinculado à sala ${data[equip].sala}.` };
+  }
+  data[equip] = { sala, em: new Date().toISOString() };
+  save(data);
+  return { ok: true, msg: `Equipamento ${equip} vinculado à sala ${sala}.` };
+}
+
+function devolver(equip) {
+  equip = normaliza(equip);
+  if (!equip) return { ok: false, msg: 'Informe o código do equipamento.' };
+  const data = load();
+  if (!data[equip]) {
+    return { ok: false, msg: `Equipamento ${equip} não está vinculado.` };
+  }
+  const sala = data[equip].sala;
+  delete data[equip];
+  save(data);
+  return { ok: true, msg: `Equipamento ${equip} devolvido (estava na sala ${sala}).` };
+}
+
+function formatHora(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString('pt-BR');
+}
+
+function renderLista() {
+  const data = load();
+  const itens = Object.entries(data).sort((a, b) => a[0].localeCompare(b[0]));
+  const cont = document.getElementById('lista-conteudo');
+  const count = document.getElementById('count');
+  count.textContent = `${itens.length} equipamento(s) em uso`;
+  if (itens.length === 0) {
+    cont.innerHTML = '<div class="empty">Nenhum equipamento vinculado.</div>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Equipamento</th><th>Sala</th><th>Desde</th><th></th></tr></thead><tbody>';
+  for (const [equip, info] of itens) {
+    html += `<tr>
+      <td><strong>${equip}</strong></td>
+      <td>${info.sala}</td>
+      <td>${formatHora(info.em)}</td>
+      <td class="actions"><button data-devolver="${equip}">Devolver</button></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  cont.innerHTML = html;
+  cont.querySelectorAll('button[data-devolver]').forEach(b => {
+    b.addEventListener('click', () => {
+      const equip = b.getAttribute('data-devolver');
+      if (confirm(`Devolver equipamento ${equip}?`)) {
+        devolver(equip);
+        renderLista();
+      }
+    });
+  });
+}
+
+// Tabs
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const tab = t.getAttribute('data-tab');
+    document.getElementById('panel-vincular').classList.toggle('hidden', tab !== 'vincular');
+    document.getElementById('panel-devolver').classList.toggle('hidden', tab !== 'devolver');
+    document.getElementById('panel-lista').classList.toggle('hidden', tab !== 'lista');
+    if (tab === 'lista') renderLista();
+    if (tab === 'vincular') document.getElementById('v-equip').focus();
+    if (tab === 'devolver') document.getElementById('d-equip').focus();
+  });
+});
+
+// Vincular form
+document.getElementById('form-vincular').addEventListener('submit', e => {
+  e.preventDefault();
+  const equip = document.getElementById('v-equip').value;
+  const sala = document.getElementById('v-sala').value;
+  const r = vincular(equip, sala);
+  mostraMsg('msg-vincular', r.msg, r.ok ? 'ok' : 'err');
+  if (r.ok) {
+    document.getElementById('v-equip').value = '';
+    document.getElementById('v-equip').focus();
+  }
+});
+
+// Devolver form
+document.getElementById('form-devolver').addEventListener('submit', e => {
+  e.preventDefault();
+  const equip = document.getElementById('d-equip').value;
+  const r = devolver(equip);
+  mostraMsg('msg-devolver', r.msg, r.ok ? 'ok' : 'err');
+  document.getElementById('d-equip').value = '';
+  document.getElementById('d-equip').focus();
+});
+</script>
+</body>
+</html>
