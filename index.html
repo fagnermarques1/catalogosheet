@@ -159,14 +159,32 @@
   }
   .scanner-mira {
     position: absolute;
-    top: 35%;
-    left: 8%;
-    right: 8%;
-    bottom: 35%;
+    top: 25%;
+    left: 4%;
+    right: 4%;
+    bottom: 25%;
     border: 3px solid rgba(255, 211, 61, 0.9);
     border-radius: 4px;
     pointer-events: none;
-    box-shadow: 0 0 0 9999px rgba(0,0,0,0.25);
+  }
+  .scanner-zoom {
+    width: 100%;
+    max-width: 480px;
+    margin-top: 12px;
+    color: #fff;
+    font-size: 0.85rem;
+    display: none;
+  }
+  .scanner-zoom.show { display: block; }
+  .scanner-zoom input[type=range] {
+    width: 100%;
+    margin: 6px 0 0;
+  }
+  .scanner-info {
+    color: #9aa4ad;
+    margin-top: 6px;
+    font-size: 0.75rem;
+    text-align: center;
   }
   .scanner-title {
     color: #fff;
@@ -264,6 +282,11 @@
     <video id="scanner-video" playsinline muted></video>
     <div class="scanner-mira"></div>
   </div>
+  <div class="scanner-zoom" id="scanner-zoom">
+    <label for="scanner-zoom-range">Zoom: <span id="scanner-zoom-val">1.0×</span></label>
+    <input type="range" id="scanner-zoom-range" min="1" max="3" step="0.1" value="1">
+  </div>
+  <div class="scanner-info" id="scanner-info"></div>
   <div class="scanner-preview" id="scanner-preview"></div>
   <div class="scanner-error" id="scanner-error"></div>
   <div class="scanner-actions">
@@ -471,6 +494,8 @@ async function abrirScanner(inputId) {
   erro.textContent = '';
   torchBtn.classList.add('hidden');
   torchBtn.classList.remove('on');
+  document.getElementById('scanner-info').textContent = '';
+  document.getElementById('scanner-zoom').classList.remove('show');
   atualizaPreview(null);
   modal.classList.add('open');
   titulo.textContent = 'Aponte para o código de barras';
@@ -480,27 +505,61 @@ async function abrirScanner(inputId) {
       audio: false,
       video: {
         facingMode: { ideal: 'environment' },
-        width: { ideal: 2560 },
-        height: { ideal: 1440 },
+        width: { ideal: 3840, min: 1280 },
+        height: { ideal: 2160, min: 720 },
+        frameRate: { ideal: 30 },
       },
     });
     video.srcObject = streamAtivo;
     await video.play();
 
-    // Lanterna (se suportada pelo aparelho)
     const track = streamAtivo.getVideoTracks()[0];
     const caps = (track && track.getCapabilities) ? track.getCapabilities() : {};
+    const settings = (track && track.getSettings) ? track.getSettings() : {};
+
+    // Foco contínuo (se suportado)
+    if (caps && caps.focusMode && caps.focusMode.includes('continuous')) {
+      try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+    }
+
+    // Lanterna (se suportada pelo aparelho)
     if (caps && caps.torch) {
       torchBtn.classList.remove('hidden');
     }
 
-    // Mostra qual motor está sendo usado, ajuda no diagnóstico
+    // Zoom: slider só aparece se o aparelho declarar a capability
+    const zoomWrap = document.getElementById('scanner-zoom');
+    const zoomRange = document.getElementById('scanner-zoom-range');
+    const zoomVal = document.getElementById('scanner-zoom-val');
+    if (caps && caps.zoom && typeof caps.zoom.min === 'number') {
+      zoomRange.min = caps.zoom.min;
+      zoomRange.max = caps.zoom.max;
+      zoomRange.step = caps.zoom.step || 0.1;
+      const inicial = settings.zoom || caps.zoom.min;
+      zoomRange.value = inicial;
+      zoomVal.textContent = parseFloat(inicial).toFixed(1) + '×';
+      zoomWrap.classList.add('show');
+      zoomRange.oninput = async () => {
+        const z = parseFloat(zoomRange.value);
+        zoomVal.textContent = z.toFixed(1) + '×';
+        try { await track.applyConstraints({ advanced: [{ zoom: z }] }); } catch (e) {}
+      };
+    } else {
+      zoomWrap.classList.remove('show');
+    }
+
+    // Linha de info com resolução real e motor (ajuda no diagnóstico)
+    const motor = temDetectorNativo ? 'detector nativo' : 'ZXing';
+    const resW = settings.width || '?';
+    const resH = settings.height || '?';
+    document.getElementById('scanner-info').textContent = `Câmera: ${resW}×${resH} · ${motor}`;
+
     if (temDetectorNativo) {
       const formatosSuportados = await window.BarcodeDetector.getSupportedFormats();
       const desejados = ['code_128','code_39','code_93','codabar','itf','ean_13','ean_8','upc_a','upc_e','qr_code'];
       const formatos = desejados.filter(f => formatosSuportados.includes(f));
       detectorNativo = new window.BarcodeDetector({ formats: formatos.length ? formatos : formatosSuportados });
-      titulo.textContent = 'Aponte para o código (detector nativo)';
+      titulo.textContent = 'Aponte para o código de barras';
       loopAtivo = true;
       loopDeteccao(video);
     } else if (temZxing) {
@@ -515,7 +574,7 @@ async function abrirScanner(inputId) {
       ]);
       hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
       zxingReader = new ZXing.BrowserMultiFormatReader(hints, 200);
-      titulo.textContent = 'Aponte para o código (ZXing)';
+      titulo.textContent = 'Aponte para o código de barras';
       zxingReader.decodeFromVideoElement(video, (result, err) => {
         if (result) tratarLeitura(result.getText());
       });
