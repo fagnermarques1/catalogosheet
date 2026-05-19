@@ -112,7 +112,71 @@
     padding: 20px;
     font-style: italic;
   }
+  .input-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .input-row input { margin-bottom: 0; flex: 1; }
+  .scan-btn {
+    flex: 0 0 auto;
+    padding: 0 16px;
+    font-size: 1.4rem;
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .scan-btn:hover { background: #eaeef2; }
+  .scan-btn.hidden { display: none; }
+  .scanner-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 1000;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .scanner-modal.open { display: flex; }
+  .scanner-box {
+    background: #000;
+    width: 100%;
+    max-width: 480px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #reader { width: 100%; }
+  #reader video { width: 100% !important; height: auto !important; }
+  .scanner-title {
+    color: #fff;
+    margin-bottom: 12px;
+    font-weight: 600;
+    text-align: center;
+  }
+  .scanner-cancel {
+    margin-top: 16px;
+    padding: 12px 24px;
+    background: #fff;
+    color: #222;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .scanner-error {
+    color: #ffb3b0;
+    margin-top: 12px;
+    text-align: center;
+    font-size: 0.9rem;
+    max-width: 480px;
+  }
 </style>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
 
@@ -129,7 +193,10 @@
   <div class="msg hidden" id="msg-vincular"></div>
   <form id="form-vincular" autocomplete="off">
     <label for="v-equip">Código do equipamento (bipar ou digitar)</label>
-    <input type="text" id="v-equip" inputmode="text" autofocus required>
+    <div class="input-row">
+      <input type="text" id="v-equip" inputmode="text" autofocus required>
+      <button type="button" class="scan-btn hidden" id="scan-v" title="Ler com a câmera" aria-label="Ler com a câmera">📷</button>
+    </div>
 
     <label for="v-sala">Sala</label>
     <input type="text" id="v-sala" inputmode="text" required>
@@ -143,7 +210,10 @@
   <div class="msg hidden" id="msg-devolver"></div>
   <form id="form-devolver" autocomplete="off">
     <label for="d-equip">Código do equipamento (bipar ou digitar)</label>
-    <input type="text" id="d-equip" inputmode="text" required>
+    <div class="input-row">
+      <input type="text" id="d-equip" inputmode="text" required>
+      <button type="button" class="scan-btn hidden" id="scan-d" title="Ler com a câmera" aria-label="Ler com a câmera">📷</button>
+    </div>
     <button type="submit" class="primary danger">Devolver</button>
   </form>
 </div>
@@ -152,6 +222,14 @@
 <div class="panel hidden" id="panel-lista">
   <div class="count" id="count"></div>
   <div id="lista-conteudo"></div>
+</div>
+
+<!-- Scanner modal -->
+<div class="scanner-modal" id="scanner-modal" role="dialog" aria-modal="true">
+  <div class="scanner-title">Aponte para o código de barras</div>
+  <div class="scanner-box"><div id="reader"></div></div>
+  <div class="scanner-error" id="scanner-error"></div>
+  <button type="button" class="scanner-cancel" id="scanner-cancel">Cancelar</button>
 </div>
 
 <script>
@@ -280,6 +358,82 @@ document.getElementById('form-devolver').addEventListener('submit', e => {
   document.getElementById('d-equip').value = '';
   document.getElementById('d-equip').focus();
 });
+
+// ===== Scanner de código de barras (câmera) =====
+const temCamera = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof Html5Qrcode !== 'undefined';
+let scanner = null;
+let alvoInputId = null;
+
+function mostraBotoesScan() {
+  if (!temCamera) return;
+  document.getElementById('scan-v').classList.remove('hidden');
+  document.getElementById('scan-d').classList.remove('hidden');
+}
+
+function abrirScanner(inputId) {
+  alvoInputId = inputId;
+  const modal = document.getElementById('scanner-modal');
+  const erro = document.getElementById('scanner-error');
+  erro.textContent = '';
+  modal.classList.add('open');
+
+  scanner = new Html5Qrcode('reader');
+  const formats = [
+    Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.CODE_93,
+    Html5QrcodeSupportedFormats.EAN_13,
+    Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.UPC_A,
+    Html5QrcodeSupportedFormats.UPC_E,
+    Html5QrcodeSupportedFormats.ITF,
+    Html5QrcodeSupportedFormats.CODABAR,
+    Html5QrcodeSupportedFormats.QR_CODE,
+  ];
+  const config = { fps: 10, qrbox: { width: 280, height: 140 }, formatsToSupport: formats };
+
+  scanner.start(
+    { facingMode: 'environment' },
+    config,
+    (texto) => {
+      const input = document.getElementById(alvoInputId);
+      if (input) {
+        input.value = texto;
+        fecharScanner(() => {
+          if (alvoInputId === 'v-equip') {
+            document.getElementById('v-sala').focus();
+          } else if (alvoInputId === 'd-equip') {
+            document.getElementById('form-devolver').requestSubmit();
+          }
+        });
+      }
+    },
+    () => { /* ignora erros por frame */ }
+  ).catch(err => {
+    erro.textContent = 'Não foi possível acessar a câmera. Verifique a permissão. (' + (err && err.message ? err.message : err) + ')';
+  });
+}
+
+function fecharScanner(cb) {
+  const modal = document.getElementById('scanner-modal');
+  const finalizar = () => {
+    modal.classList.remove('open');
+    scanner = null;
+    if (cb) cb();
+  };
+  if (scanner) {
+    scanner.stop().then(() => scanner.clear()).then(finalizar).catch(finalizar);
+  } else {
+    finalizar();
+  }
+}
+
+if (temCamera) {
+  mostraBotoesScan();
+  document.getElementById('scan-v').addEventListener('click', () => abrirScanner('v-equip'));
+  document.getElementById('scan-d').addEventListener('click', () => abrirScanner('d-equip'));
+  document.getElementById('scanner-cancel').addEventListener('click', () => fecharScanner());
+}
 </script>
 </body>
 </html>
