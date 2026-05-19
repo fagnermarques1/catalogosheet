@@ -157,17 +157,6 @@
     font-weight: 600;
     text-align: center;
   }
-  .scanner-cancel {
-    margin-top: 16px;
-    padding: 12px 24px;
-    background: #fff;
-    color: #222;
-    border: none;
-    border-radius: 6px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
   .scanner-error {
     color: #ffb3b0;
     margin-top: 12px;
@@ -175,6 +164,33 @@
     font-size: 0.9rem;
     max-width: 480px;
   }
+  .scanner-preview {
+    color: #fff;
+    margin-top: 10px;
+    text-align: center;
+    font-size: 0.95rem;
+    min-height: 1.2em;
+  }
+  .scanner-preview strong { color: #ffd33d; }
+  .scanner-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .scanner-actions button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .scanner-cancel { background: #fff; color: #222; }
+  .scanner-torch { background: #444; color: #fff; }
+  .scanner-torch.on { background: #ffd33d; color: #222; }
+  .scanner-torch.hidden { display: none; }
 </style>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
@@ -228,8 +244,12 @@
 <div class="scanner-modal" id="scanner-modal" role="dialog" aria-modal="true">
   <div class="scanner-title">Aponte para o código de barras</div>
   <div class="scanner-box"><div id="reader"></div></div>
+  <div class="scanner-preview" id="scanner-preview"></div>
   <div class="scanner-error" id="scanner-error"></div>
-  <button type="button" class="scanner-cancel" id="scanner-cancel">Cancelar</button>
+  <div class="scanner-actions">
+    <button type="button" class="scanner-torch hidden" id="scanner-torch">🔦 Lanterna</button>
+    <button type="button" class="scanner-cancel" id="scanner-cancel">Cancelar</button>
+  </div>
 </div>
 
 <script>
@@ -361,8 +381,13 @@ document.getElementById('form-devolver').addEventListener('submit', e => {
 
 // ===== Scanner de código de barras (câmera) =====
 const temCamera = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof Html5Qrcode !== 'undefined';
+const CONFIRMACOES_NECESSARIAS = 2;
 let scanner = null;
 let alvoInputId = null;
+let ultimoCodigo = null;
+let confirmacoes = 0;
+let lendo = false;
+let torchOn = false;
 
 function mostraBotoesScan() {
   if (!temCamera) return;
@@ -370,46 +395,111 @@ function mostraBotoesScan() {
   document.getElementById('scan-d').classList.remove('hidden');
 }
 
+function atualizaPreview(texto) {
+  const el = document.getElementById('scanner-preview');
+  if (!texto) { el.innerHTML = '&nbsp;'; return; }
+  el.innerHTML = `Lendo: <strong>${texto}</strong> (${confirmacoes}/${CONFIRMACOES_NECESSARIAS})`;
+}
+
+function tentaMostrarLanterna() {
+  const btn = document.getElementById('scanner-torch');
+  try {
+    const caps = scanner.getRunningTrackCameraCapabilities && scanner.getRunningTrackCameraCapabilities();
+    const torchCap = caps && (caps.torchFeature ? caps.torchFeature() : null);
+    if (torchCap && torchCap.isSupported && torchCap.isSupported()) {
+      btn.classList.remove('hidden');
+      return;
+    }
+  } catch (e) { /* ignora */ }
+  // fallback: tenta via applyVideoConstraints
+  btn.classList.remove('hidden');
+}
+
+function alternaLanterna() {
+  const btn = document.getElementById('scanner-torch');
+  torchOn = !torchOn;
+  try {
+    scanner.applyVideoConstraints({ advanced: [{ torch: torchOn }] })
+      .then(() => { btn.classList.toggle('on', torchOn); })
+      .catch(() => {
+        torchOn = !torchOn;
+        btn.classList.add('hidden');
+      });
+  } catch (e) {
+    torchOn = !torchOn;
+    btn.classList.add('hidden');
+  }
+}
+
 function abrirScanner(inputId) {
   alvoInputId = inputId;
+  ultimoCodigo = null;
+  confirmacoes = 0;
+  lendo = false;
+  torchOn = false;
   const modal = document.getElementById('scanner-modal');
   const erro = document.getElementById('scanner-error');
+  const torchBtn = document.getElementById('scanner-torch');
   erro.textContent = '';
+  torchBtn.classList.add('hidden');
+  torchBtn.classList.remove('on');
+  atualizaPreview(null);
   modal.classList.add('open');
 
-  scanner = new Html5Qrcode('reader');
+  scanner = new Html5Qrcode('reader', { verbose: false });
   const formats = [
     Html5QrcodeSupportedFormats.CODE_128,
     Html5QrcodeSupportedFormats.CODE_39,
     Html5QrcodeSupportedFormats.CODE_93,
-    Html5QrcodeSupportedFormats.EAN_13,
-    Html5QrcodeSupportedFormats.EAN_8,
-    Html5QrcodeSupportedFormats.UPC_A,
-    Html5QrcodeSupportedFormats.UPC_E,
     Html5QrcodeSupportedFormats.ITF,
     Html5QrcodeSupportedFormats.CODABAR,
     Html5QrcodeSupportedFormats.QR_CODE,
   ];
-  const config = { fps: 10, qrbox: { width: 280, height: 140 }, formatsToSupport: formats };
+  const config = {
+    fps: 15,
+    qrbox: { width: 320, height: 180 },
+    formatsToSupport: formats,
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+    videoConstraints: {
+      facingMode: 'environment',
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    },
+  };
 
   scanner.start(
     { facingMode: 'environment' },
     config,
     (texto) => {
-      const input = document.getElementById(alvoInputId);
-      if (input) {
-        input.value = texto;
-        fecharScanner(() => {
-          if (alvoInputId === 'v-equip') {
-            document.getElementById('v-sala').focus();
-          } else if (alvoInputId === 'd-equip') {
-            document.getElementById('form-devolver').requestSubmit();
-          }
-        });
+      if (lendo) return;
+      const limpo = (texto || '').trim();
+      if (!limpo) return;
+      if (limpo === ultimoCodigo) {
+        confirmacoes++;
+      } else {
+        ultimoCodigo = limpo;
+        confirmacoes = 1;
+      }
+      atualizaPreview(limpo);
+      if (confirmacoes >= CONFIRMACOES_NECESSARIAS) {
+        lendo = true;
+        const input = document.getElementById(alvoInputId);
+        if (input) {
+          input.value = limpo;
+          fecharScanner(() => {
+            if (alvoInputId === 'v-equip') {
+              document.getElementById('v-sala').focus();
+            } else if (alvoInputId === 'd-equip') {
+              document.getElementById('form-devolver').requestSubmit();
+            }
+          });
+        }
       }
     },
     () => { /* ignora erros por frame */ }
-  ).catch(err => {
+  ).then(() => {
+    tentaMostrarLanterna();
+  }).catch(err => {
     erro.textContent = 'Não foi possível acessar a câmera. Verifique a permissão. (' + (err && err.message ? err.message : err) + ')';
   });
 }
@@ -419,6 +509,11 @@ function fecharScanner(cb) {
   const finalizar = () => {
     modal.classList.remove('open');
     scanner = null;
+    ultimoCodigo = null;
+    confirmacoes = 0;
+    lendo = false;
+    torchOn = false;
+    atualizaPreview(null);
     if (cb) cb();
   };
   if (scanner) {
@@ -433,6 +528,7 @@ if (temCamera) {
   document.getElementById('scan-v').addEventListener('click', () => abrirScanner('v-equip'));
   document.getElementById('scan-d').addEventListener('click', () => abrirScanner('d-equip'));
   document.getElementById('scanner-cancel').addEventListener('click', () => fecharScanner());
+  document.getElementById('scanner-torch').addEventListener('click', alternaLanterna);
 }
 </script>
 </body>
