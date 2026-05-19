@@ -146,11 +146,28 @@
     background: #000;
     width: 100%;
     max-width: 480px;
+    aspect-ratio: 4 / 3;
     border-radius: 8px;
     overflow: hidden;
+    position: relative;
   }
-  #reader { width: 100%; }
-  #reader video { width: 100% !important; height: auto !important; }
+  #scanner-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .scanner-mira {
+    position: absolute;
+    top: 35%;
+    left: 8%;
+    right: 8%;
+    bottom: 35%;
+    border: 3px solid rgba(255, 211, 61, 0.9);
+    border-radius: 4px;
+    pointer-events: none;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.25);
+  }
   .scanner-title {
     color: #fff;
     margin-bottom: 12px;
@@ -192,7 +209,7 @@
   .scanner-torch.on { background: #ffd33d; color: #222; }
   .scanner-torch.hidden { display: none; }
 </style>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 <body>
 
@@ -242,8 +259,11 @@
 
 <!-- Scanner modal -->
 <div class="scanner-modal" id="scanner-modal" role="dialog" aria-modal="true">
-  <div class="scanner-title">Aponte para o código de barras</div>
-  <div class="scanner-box"><div id="reader"></div></div>
+  <div class="scanner-title" id="scanner-title">Aponte para o código de barras</div>
+  <div class="scanner-box">
+    <video id="scanner-video" playsinline muted></video>
+    <div class="scanner-mira"></div>
+  </div>
   <div class="scanner-preview" id="scanner-preview"></div>
   <div class="scanner-error" id="scanner-error"></div>
   <div class="scanner-actions">
@@ -380,9 +400,16 @@ document.getElementById('form-devolver').addEventListener('submit', e => {
 });
 
 // ===== Scanner de código de barras (câmera) =====
-const temCamera = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof Html5Qrcode !== 'undefined';
+const temMidia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+const temDetectorNativo = 'BarcodeDetector' in window;
+const temZxing = typeof ZXing !== 'undefined';
+const temCamera = temMidia && (temDetectorNativo || temZxing);
 const CONFIRMACOES_NECESSARIAS = 2;
-let scanner = null;
+
+let streamAtivo = null;
+let detectorNativo = null;
+let zxingReader = null;
+let loopAtivo = false;
 let alvoInputId = null;
 let ultimoCodigo = null;
 let confirmacoes = 0;
@@ -401,126 +428,155 @@ function atualizaPreview(texto) {
   el.innerHTML = `Lendo: <strong>${texto}</strong> (${confirmacoes}/${CONFIRMACOES_NECESSARIAS})`;
 }
 
-function tentaMostrarLanterna() {
-  const btn = document.getElementById('scanner-torch');
-  try {
-    const caps = scanner.getRunningTrackCameraCapabilities && scanner.getRunningTrackCameraCapabilities();
-    const torchCap = caps && (caps.torchFeature ? caps.torchFeature() : null);
-    if (torchCap && torchCap.isSupported && torchCap.isSupported()) {
-      btn.classList.remove('hidden');
-      return;
-    }
-  } catch (e) { /* ignora */ }
-  // fallback: tenta via applyVideoConstraints
-  btn.classList.remove('hidden');
-}
-
-function alternaLanterna() {
-  const btn = document.getElementById('scanner-torch');
-  torchOn = !torchOn;
-  try {
-    scanner.applyVideoConstraints({ advanced: [{ torch: torchOn }] })
-      .then(() => { btn.classList.toggle('on', torchOn); })
-      .catch(() => {
-        torchOn = !torchOn;
-        btn.classList.add('hidden');
+function tratarLeitura(texto) {
+  if (lendo) return;
+  const limpo = (texto || '').trim();
+  if (!limpo) return;
+  if (limpo === ultimoCodigo) {
+    confirmacoes++;
+  } else {
+    ultimoCodigo = limpo;
+    confirmacoes = 1;
+  }
+  atualizaPreview(limpo);
+  if (confirmacoes >= CONFIRMACOES_NECESSARIAS) {
+    lendo = true;
+    const input = document.getElementById(alvoInputId);
+    if (input) {
+      input.value = limpo;
+      fecharScanner(() => {
+        if (alvoInputId === 'v-equip') {
+          document.getElementById('v-sala').focus();
+        } else if (alvoInputId === 'd-equip') {
+          document.getElementById('form-devolver').requestSubmit();
+        }
       });
-  } catch (e) {
-    torchOn = !torchOn;
-    btn.classList.add('hidden');
+    }
   }
 }
 
-function abrirScanner(inputId) {
+async function abrirScanner(inputId) {
   alvoInputId = inputId;
   ultimoCodigo = null;
   confirmacoes = 0;
   lendo = false;
   torchOn = false;
+
   const modal = document.getElementById('scanner-modal');
   const erro = document.getElementById('scanner-error');
+  const titulo = document.getElementById('scanner-title');
   const torchBtn = document.getElementById('scanner-torch');
+  const video = document.getElementById('scanner-video');
+
   erro.textContent = '';
   torchBtn.classList.add('hidden');
   torchBtn.classList.remove('on');
   atualizaPreview(null);
   modal.classList.add('open');
+  titulo.textContent = 'Aponte para o código de barras';
 
-  scanner = new Html5Qrcode('reader', { verbose: false });
-  const formats = [
-    Html5QrcodeSupportedFormats.CODE_128,
-    Html5QrcodeSupportedFormats.CODE_39,
-    Html5QrcodeSupportedFormats.CODE_93,
-    Html5QrcodeSupportedFormats.ITF,
-    Html5QrcodeSupportedFormats.CODABAR,
-    Html5QrcodeSupportedFormats.QR_CODE,
-  ];
-  const config = {
-    fps: 15,
-    qrbox: { width: 320, height: 180 },
-    formatsToSupport: formats,
-    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-    videoConstraints: {
-      facingMode: 'environment',
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-    },
-  };
+  try {
+    streamAtivo = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 2560 },
+        height: { ideal: 1440 },
+      },
+    });
+    video.srcObject = streamAtivo;
+    await video.play();
 
-  scanner.start(
-    { facingMode: 'environment' },
-    config,
-    (texto) => {
-      if (lendo) return;
-      const limpo = (texto || '').trim();
-      if (!limpo) return;
-      if (limpo === ultimoCodigo) {
-        confirmacoes++;
-      } else {
-        ultimoCodigo = limpo;
-        confirmacoes = 1;
+    // Lanterna (se suportada pelo aparelho)
+    const track = streamAtivo.getVideoTracks()[0];
+    const caps = (track && track.getCapabilities) ? track.getCapabilities() : {};
+    if (caps && caps.torch) {
+      torchBtn.classList.remove('hidden');
+    }
+
+    // Mostra qual motor está sendo usado, ajuda no diagnóstico
+    if (temDetectorNativo) {
+      const formatosSuportados = await window.BarcodeDetector.getSupportedFormats();
+      const desejados = ['code_128','code_39','code_93','codabar','itf','ean_13','ean_8','upc_a','upc_e','qr_code'];
+      const formatos = desejados.filter(f => formatosSuportados.includes(f));
+      detectorNativo = new window.BarcodeDetector({ formats: formatos.length ? formatos : formatosSuportados });
+      titulo.textContent = 'Aponte para o código (detector nativo)';
+      loopAtivo = true;
+      loopDeteccao(video);
+    } else if (temZxing) {
+      const hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+        ZXing.BarcodeFormat.CODE_128,
+        ZXing.BarcodeFormat.CODE_39,
+        ZXing.BarcodeFormat.CODE_93,
+        ZXing.BarcodeFormat.CODABAR,
+        ZXing.BarcodeFormat.ITF,
+        ZXing.BarcodeFormat.QR_CODE,
+      ]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      zxingReader = new ZXing.BrowserMultiFormatReader(hints, 200);
+      titulo.textContent = 'Aponte para o código (ZXing)';
+      zxingReader.decodeFromVideoElement(video, (result, err) => {
+        if (result) tratarLeitura(result.getText());
+      });
+    } else {
+      erro.textContent = 'Nenhum leitor de código disponível neste navegador.';
+    }
+  } catch (err) {
+    erro.textContent = 'Não foi possível acessar a câmera. ' + (err && err.message ? err.message : err);
+  }
+}
+
+async function loopDeteccao(video) {
+  if (!loopAtivo || !detectorNativo) return;
+  try {
+    if (video.readyState >= 2) {
+      const codigos = await detectorNativo.detect(video);
+      if (codigos && codigos.length > 0) {
+        tratarLeitura(codigos[0].rawValue);
       }
-      atualizaPreview(limpo);
-      if (confirmacoes >= CONFIRMACOES_NECESSARIAS) {
-        lendo = true;
-        const input = document.getElementById(alvoInputId);
-        if (input) {
-          input.value = limpo;
-          fecharScanner(() => {
-            if (alvoInputId === 'v-equip') {
-              document.getElementById('v-sala').focus();
-            } else if (alvoInputId === 'd-equip') {
-              document.getElementById('form-devolver').requestSubmit();
-            }
-          });
-        }
-      }
-    },
-    () => { /* ignora erros por frame */ }
-  ).then(() => {
-    tentaMostrarLanterna();
-  }).catch(err => {
-    erro.textContent = 'Não foi possível acessar a câmera. Verifique a permissão. (' + (err && err.message ? err.message : err) + ')';
-  });
+    }
+  } catch (e) { /* ignora frame */ }
+  if (loopAtivo) requestAnimationFrame(() => loopDeteccao(video));
+}
+
+async function alternaLanterna() {
+  if (!streamAtivo) return;
+  const track = streamAtivo.getVideoTracks()[0];
+  if (!track) return;
+  const btn = document.getElementById('scanner-torch');
+  const novoEstado = !torchOn;
+  try {
+    await track.applyConstraints({ advanced: [{ torch: novoEstado }] });
+    torchOn = novoEstado;
+    btn.classList.toggle('on', torchOn);
+  } catch (e) {
+    document.getElementById('scanner-error').textContent =
+      'Lanterna não suportada neste dispositivo/navegador.';
+    btn.classList.add('hidden');
+  }
 }
 
 function fecharScanner(cb) {
-  const modal = document.getElementById('scanner-modal');
-  const finalizar = () => {
-    modal.classList.remove('open');
-    scanner = null;
-    ultimoCodigo = null;
-    confirmacoes = 0;
-    lendo = false;
-    torchOn = false;
-    atualizaPreview(null);
-    if (cb) cb();
-  };
-  if (scanner) {
-    scanner.stop().then(() => scanner.clear()).then(finalizar).catch(finalizar);
-  } else {
-    finalizar();
+  loopAtivo = false;
+  if (zxingReader) {
+    try { zxingReader.reset(); } catch (e) {}
+    zxingReader = null;
   }
+  detectorNativo = null;
+  if (streamAtivo) {
+    streamAtivo.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+    streamAtivo = null;
+  }
+  const video = document.getElementById('scanner-video');
+  if (video) video.srcObject = null;
+  document.getElementById('scanner-modal').classList.remove('open');
+  ultimoCodigo = null;
+  confirmacoes = 0;
+  lendo = false;
+  torchOn = false;
+  atualizaPreview(null);
+  if (cb) cb();
 }
 
 if (temCamera) {
