@@ -15,6 +15,17 @@
     margin: 0 auto;
   }
   h1 { font-size: 1.4rem; margin-bottom: 16px; text-align: center; }
+  .banner {
+    background: #fff8c5;
+    border: 1px solid #d4a72c;
+    color: #6b5400;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+  }
+  .banner.erro { background: #ffebe9; border-color: #cf222e; color: #cf222e; }
+  .banner.hidden { display: none; }
   .tabs {
     display: flex;
     margin-bottom: 16px;
@@ -233,6 +244,8 @@
 
 <h1>Controle de Equipamentos — MAP Test</h1>
 
+<div class="banner hidden" id="banner"></div>
+
 <div class="tabs">
   <button class="tab active" data-tab="vincular">Vincular</button>
   <button class="tab" data-tab="devolver">Devolver</button>
@@ -295,19 +308,60 @@
   </div>
 </div>
 
-<script>
-const STORAGE_KEY = 'map_equipamentos_v1';
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import {
+  getFirestore, collection, onSnapshot,
+  doc, setDoc, deleteDoc
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
-function load() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-  } catch (e) {
-    return {};
-  }
+// ============================================================
+//  CONFIGURAÇÃO DO FIREBASE — cole aqui as chaves do seu projeto
+//  (Console do Firebase > Configurações do projeto > Seus apps > Web)
+// ============================================================
+const firebaseConfig = {
+  apiKey: "COLE_SUA_API_KEY",
+  authDomain: "COLE_SEU_PROJETO.firebaseapp.com",
+  projectId: "COLE_SEU_PROJETO_ID",
+  storageBucket: "COLE_SEU_PROJETO.appspot.com",
+  messagingSenderId: "COLE_SEU_SENDER_ID",
+  appId: "COLE_SEU_APP_ID"
+};
+// ============================================================
+
+const COLECAO = 'equipamentos';
+const configurado = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('COLE_');
+
+let db = null;
+let estado = {}; // espelho local do Firestore: { codigo: { sala, em } }
+
+function mostraBanner(texto, erro) {
+  const el = document.getElementById('banner');
+  el.textContent = texto;
+  el.className = 'banner' + (erro ? ' erro' : '');
 }
 
-function save(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+function escondeBanner() {
+  document.getElementById('banner').className = 'banner hidden';
+}
+
+if (configurado) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    onSnapshot(collection(db, COLECAO), (snap) => {
+      estado = {};
+      snap.forEach(d => { estado[d.id] = d.data(); });
+      escondeBanner();
+      renderLista();
+    }, (err) => {
+      mostraBanner('Erro ao conectar no banco: ' + err.message, true);
+    });
+  } catch (e) {
+    mostraBanner('Erro ao iniciar o Firebase: ' + e.message, true);
+  }
+} else {
+  mostraBanner('App ainda não configurado: cole a configuração do Firebase no index.html para compartilhar a lista entre todos.', true);
 }
 
 function normaliza(s) {
@@ -321,30 +375,36 @@ function mostraMsg(id, texto, tipo) {
   setTimeout(() => { el.className = 'msg hidden'; }, 3500);
 }
 
-function vincular(equip, sala) {
+async function vincular(equip, sala) {
   equip = normaliza(equip);
   sala = normaliza(sala);
   if (!equip || !sala) return { ok: false, msg: 'Preencha equipamento e sala.' };
-  const data = load();
-  if (data[equip]) {
-    return { ok: false, msg: `Equipamento ${equip} já está vinculado à sala ${data[equip].sala}.` };
+  if (!db) return { ok: false, msg: 'App não configurado (Firebase).' };
+  if (estado[equip]) {
+    return { ok: false, msg: `Equipamento ${equip} já está vinculado à sala ${estado[equip].sala}.` };
   }
-  data[equip] = { sala, em: new Date().toISOString() };
-  save(data);
-  return { ok: true, msg: `Equipamento ${equip} vinculado à sala ${sala}.` };
+  try {
+    await setDoc(doc(db, COLECAO, equip), { sala, em: new Date().toISOString() });
+    return { ok: true, msg: `Equipamento ${equip} vinculado à sala ${sala}.` };
+  } catch (e) {
+    return { ok: false, msg: 'Erro ao salvar: ' + e.message };
+  }
 }
 
-function devolver(equip) {
+async function devolver(equip) {
   equip = normaliza(equip);
   if (!equip) return { ok: false, msg: 'Informe o código do equipamento.' };
-  const data = load();
-  if (!data[equip]) {
+  if (!db) return { ok: false, msg: 'App não configurado (Firebase).' };
+  if (!estado[equip]) {
     return { ok: false, msg: `Equipamento ${equip} não está vinculado.` };
   }
-  const sala = data[equip].sala;
-  delete data[equip];
-  save(data);
-  return { ok: true, msg: `Equipamento ${equip} devolvido (estava na sala ${sala}).` };
+  const sala = estado[equip].sala;
+  try {
+    await deleteDoc(doc(db, COLECAO, equip));
+    return { ok: true, msg: `Equipamento ${equip} devolvido (estava na sala ${sala}).` };
+  } catch (e) {
+    return { ok: false, msg: 'Erro ao devolver: ' + e.message };
+  }
 }
 
 function formatHora(iso) {
@@ -353,8 +413,7 @@ function formatHora(iso) {
 }
 
 function renderLista() {
-  const data = load();
-  const itens = Object.entries(data).sort((a, b) => a[0].localeCompare(b[0]));
+  const itens = Object.entries(estado).sort((a, b) => a[0].localeCompare(b[0]));
   const cont = document.getElementById('lista-conteudo');
   const count = document.getElementById('count');
   count.textContent = `${itens.length} equipamento(s) em uso`;
@@ -374,11 +433,11 @@ function renderLista() {
   html += '</tbody></table>';
   cont.innerHTML = html;
   cont.querySelectorAll('button[data-devolver]').forEach(b => {
-    b.addEventListener('click', () => {
+    b.addEventListener('click', async () => {
       const equip = b.getAttribute('data-devolver');
       if (confirm(`Devolver equipamento ${equip}?`)) {
-        devolver(equip);
-        renderLista();
+        await devolver(equip);
+        // a lista atualiza sozinha pelo onSnapshot
       }
     });
   });
@@ -400,11 +459,11 @@ document.querySelectorAll('.tab').forEach(t => {
 });
 
 // Vincular form
-document.getElementById('form-vincular').addEventListener('submit', e => {
+document.getElementById('form-vincular').addEventListener('submit', async e => {
   e.preventDefault();
   const equip = document.getElementById('v-equip').value;
   const sala = document.getElementById('v-sala').value;
-  const r = vincular(equip, sala);
+  const r = await vincular(equip, sala);
   mostraMsg('msg-vincular', r.msg, r.ok ? 'ok' : 'err');
   if (r.ok) {
     document.getElementById('v-equip').value = '';
@@ -413,10 +472,10 @@ document.getElementById('form-vincular').addEventListener('submit', e => {
 });
 
 // Devolver form
-document.getElementById('form-devolver').addEventListener('submit', e => {
+document.getElementById('form-devolver').addEventListener('submit', async e => {
   e.preventDefault();
   const equip = document.getElementById('d-equip').value;
-  const r = devolver(equip);
+  const r = await devolver(equip);
   mostraMsg('msg-devolver', r.msg, r.ok ? 'ok' : 'err');
   document.getElementById('d-equip').value = '';
   document.getElementById('d-equip').focus();
