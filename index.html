@@ -356,9 +356,11 @@ if (configurado) {
       escondeBanner();
       renderLista();
     }, (err) => {
-      mostraBanner('Erro ao conectar no banco: ' + err.message, true);
+      console.error('Erro onSnapshot:', err);
+      mostraBanner('Erro ao ler do banco [' + (err.code || '?') + ']: ' + err.message, true);
     });
   } catch (e) {
+    console.error('Erro ao iniciar o Firebase:', e);
     mostraBanner('Erro ao iniciar o Firebase: ' + e.message, true);
   }
 } else {
@@ -388,6 +390,8 @@ async function vincular(equip, sala) {
     await setDoc(doc(db, COLECAO, equip), { sala, em: new Date().toISOString() });
     return { ok: true, msg: `Equipamento ${equip} vinculado à sala ${sala}.` };
   } catch (e) {
+    console.error('Erro ao salvar no Firestore:', e);
+    mostraBanner('Erro ao salvar [' + (e.code || '?') + ']: ' + e.message, true);
     return { ok: false, msg: 'Erro ao salvar: ' + e.message };
   }
 }
@@ -404,6 +408,8 @@ async function devolver(equip) {
     await deleteDoc(doc(db, COLECAO, equip));
     return { ok: true, msg: `Equipamento ${equip} devolvido (estava na sala ${sala}).` };
   } catch (e) {
+    console.error('Erro ao devolver no Firestore:', e);
+    mostraBanner('Erro ao devolver [' + (e.code || '?') + ']: ' + e.message, true);
     return { ok: false, msg: 'Erro ao devolver: ' + e.message };
   }
 }
