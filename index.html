@@ -322,7 +322,7 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
-  getFirestore, collection, onSnapshot,
+  getFirestore, initializeFirestore, collection, onSnapshot,
   doc, setDoc, deleteDoc
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -343,7 +343,7 @@ const firebaseConfig = {
 
 // Versão do app — deve ser igual ao conteúdo de versao.txt.
 // A cada deploy, incremente os dois.
-const VERSAO = '3';
+const VERSAO = '4';
 
 // Auto-atualização: busca a versão publicada (sem cache) e, se for
 // diferente da carregada, recarrega forçando o cache a buscar a nova.
@@ -390,7 +390,9 @@ function comTimeout(promise, ms, msgTimeout) {
 if (configurado) {
   try {
     const app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
+    // Long-polling: compatível com redes/proxies que quebram o streaming
+    // padrão (WebChannel) do Firestore, comum em redes escolares.
+    db = initializeFirestore(app, { experimentalForceLongPolling: true });
     mostraBanner('Conectando ao banco…', false);
     onSnapshot(collection(db, COLECAO), (snap) => {
       conectou = true;
