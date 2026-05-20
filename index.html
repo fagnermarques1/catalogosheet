@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Controle de Equipamentos - MAP Test</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -26,6 +29,12 @@
   }
   .banner.erro { background: #ffebe9; border-color: #cf222e; color: #cf222e; }
   .banner.hidden { display: none; }
+  .rodape {
+    text-align: center;
+    color: #9aa4ad;
+    font-size: 0.75rem;
+    margin-top: 24px;
+  }
   .tabs {
     display: flex;
     margin-bottom: 16px;
@@ -308,6 +317,8 @@
   </div>
 </div>
 
+<div class="rodape" id="versao"></div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
@@ -329,6 +340,28 @@ const firebaseConfig = {
   measurementId: "G-LYRECWQRK1"
 };
 // ============================================================
+
+// Versão do app — deve ser igual ao conteúdo de versao.txt.
+// A cada deploy, incremente os dois.
+const VERSAO = '2';
+
+// Auto-atualização: busca a versão publicada (sem cache) e, se for
+// diferente da carregada, recarrega forçando o cache a buscar a nova.
+(function checaVersao() {
+  fetch('versao.txt?t=' + Date.now(), { cache: 'no-store' })
+    .then(r => r.ok ? r.text() : null)
+    .then(txt => {
+      if (!txt) return;
+      const remota = txt.trim();
+      const el = document.getElementById('versao');
+      if (el) el.textContent = 'v' + VERSAO;
+      if (remota && remota !== VERSAO && sessionStorage.getItem('recarregou') !== remota) {
+        sessionStorage.setItem('recarregou', remota);
+        location.replace(location.pathname + '?v=' + remota);
+      }
+    })
+    .catch(() => {});
+})();
 
 const COLECAO = 'equipamentos';
 const configurado = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('COLE_');
