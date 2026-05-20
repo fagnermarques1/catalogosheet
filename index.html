@@ -339,11 +339,13 @@ const firebaseConfig = {
   appId: "1:233110578752:web:22405a44470f0f765e21a5",
   measurementId: "G-LYRECWQRK1"
 };
+// Nome do banco Firestore (este projeto usa um banco nomeado, não o "(default)").
+const DATABASE_ID = 'catalogo-map';
 // ============================================================
 
 // Versão do app — deve ser igual ao conteúdo de versao.txt.
 // A cada deploy, incremente os dois.
-const VERSAO = '4';
+const VERSAO = '5';
 
 // Auto-atualização: busca a versão publicada (sem cache) e, se for
 // diferente da carregada, recarrega forçando o cache a buscar a nova.
@@ -392,7 +394,8 @@ if (configurado) {
     const app = initializeApp(firebaseConfig);
     // Long-polling: compatível com redes/proxies que quebram o streaming
     // padrão (WebChannel) do Firestore, comum em redes escolares.
-    db = initializeFirestore(app, { experimentalForceLongPolling: true });
+    // O 3º argumento aponta para o banco nomeado (não o "(default)").
+    db = initializeFirestore(app, { experimentalForceLongPolling: true }, DATABASE_ID);
     mostraBanner('Conectando ao banco…', false);
     onSnapshot(collection(db, COLECAO), (snap) => {
       conectou = true;
