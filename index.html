@@ -343,7 +343,7 @@ const firebaseConfig = {
 
 // Versão do app — deve ser igual ao conteúdo de versao.txt.
 // A cada deploy, incremente os dois.
-const VERSAO = '2';
+const VERSAO = '3';
 
 // Auto-atualização: busca a versão publicada (sem cache) e, se for
 // diferente da carregada, recarrega forçando o cache a buscar a nova.
@@ -368,6 +368,7 @@ const configurado = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('
 
 let db = null;
 let estado = {}; // espelho local do Firestore: { codigo: { sala, em } }
+let conectou = false;
 
 function mostraBanner(texto, erro) {
   const el = document.getElementById('banner');
@@ -379,19 +380,34 @@ function escondeBanner() {
   document.getElementById('banner').className = 'banner hidden';
 }
 
+function comTimeout(promise, ms, msgTimeout) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(msgTimeout)), ms))
+  ]);
+}
+
 if (configurado) {
   try {
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
+    mostraBanner('Conectando ao banco…', false);
     onSnapshot(collection(db, COLECAO), (snap) => {
+      conectou = true;
       estado = {};
       snap.forEach(d => { estado[d.id] = d.data(); });
       escondeBanner();
       renderLista();
     }, (err) => {
+      conectou = true;
       console.error('Erro onSnapshot:', err);
       mostraBanner('Erro ao ler do banco [' + (err.code || '?') + ']: ' + err.message, true);
     });
+    setTimeout(() => {
+      if (!conectou) {
+        mostraBanner('Sem resposta do banco em 12s. Verifique: (1) o Firestore foi criado no projeto gcp-isc em modo Native? (2) a rede está bloqueando firestore.googleapis.com?', true);
+      }
+    }, 12000);
   } catch (e) {
     console.error('Erro ao iniciar o Firebase:', e);
     mostraBanner('Erro ao iniciar o Firebase: ' + e.message, true);
@@ -420,7 +436,11 @@ async function vincular(equip, sala) {
     return { ok: false, msg: `Equipamento ${equip} já está vinculado à sala ${estado[equip].sala}.` };
   }
   try {
-    await setDoc(doc(db, COLECAO, equip), { sala, em: new Date().toISOString() });
+    await comTimeout(
+      setDoc(doc(db, COLECAO, equip), { sala, em: new Date().toISOString() }),
+      12000,
+      'tempo esgotado — o banco não respondeu (rede bloqueada ou Firestore não criado)'
+    );
     return { ok: true, msg: `Equipamento ${equip} vinculado à sala ${sala}.` };
   } catch (e) {
     console.error('Erro ao salvar no Firestore:', e);
@@ -438,7 +458,11 @@ async function devolver(equip) {
   }
   const sala = estado[equip].sala;
   try {
-    await deleteDoc(doc(db, COLECAO, equip));
+    await comTimeout(
+      deleteDoc(doc(db, COLECAO, equip)),
+      12000,
+      'tempo esgotado — o banco não respondeu (rede bloqueada ou Firestore não criado)'
+    );
     return { ok: true, msg: `Equipamento ${equip} devolvido (estava na sala ${sala}).` };
   } catch (e) {
     console.error('Erro ao devolver no Firestore:', e);
