@@ -1,0 +1,43 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'org.iscbrazil.mdmagent'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'org.iscbrazil.mdmagent'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0'
+
+        // URL do servidor central. Troque para o endereço real (HTTPS em produção!).
+        // Ex.: "https://mdm.iscbrazil.local"
+        buildConfigField 'String', 'SERVER_URL', '"http://10.0.2.2:8080"'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // em desenvolvimento aceita HTTP puro; em produção use HTTPS + network security config
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+    buildFeatures { buildConfig true }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+}

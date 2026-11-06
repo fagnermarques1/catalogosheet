@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ISC · Agente de Tela</title>
+  <style>
+    :root { --bg:#000; --fg:#fff; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--fg);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; overflow: hidden; }
+    #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      transition: filter .3s, opacity .3s; }
+    #stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #stage .html { width: 100%; height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center; gap: 1rem; padding: 4vw; }
+    #stage .html h1 { font-size: 6vw; }
+    #stage .html p { font-size: 2.4vw; opacity: .85; }
+    .ducked { filter: brightness(.25) blur(2px); }
+    /* overlay de mensagem (comando showMessage) */
+    #msg { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,.78); text-align: center; padding: 6vw; font-size: 4vw; z-index: 20; }
+    /* banner de PA */
+    #pa { position: fixed; left: 0; right: 0; bottom: 0; display: none; gap: 1rem;
+      align-items: center; padding: 2vw 3vw; background: #b00020; color: #fff;
+      font-size: 3vw; z-index: 30; box-shadow: 0 -8px 40px rgba(176,0,32,.6); }
+    #pa .ico { font-size: 4vw; }
+    /* barra de status (canto) — só p/ diagnóstico do PoC */
+    #hud { position: fixed; top: 0; right: 0; font-size: 12px; line-height: 1.5;
+      background: rgba(0,0,0,.55); color: #9f9; padding: 6px 10px; border-bottom-left-radius: 8px;
+      font-family: ui-monospace, monospace; z-index: 40; max-width: 46ch; }
+    #hud.off { color: #f99; }
+    #gate { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background:#111; z-index: 50; flex-direction: column; gap: 1rem; }
+    #gate button { font-size: 1.2rem; padding: .8rem 1.6rem; border: 0; border-radius: 8px;
+      background:#0b5; color:#fff; cursor: pointer; }
+    #gate p { opacity:.7; max-width: 40ch; text-align:center; }
+  </style>
+</head>
+<body>
+  <div id="stage"><div class="html"><h1>Conectando…</h1></div></div>
+  <div id="msg"></div>
+  <div id="pa"><span class="ico">🔊</span><span id="pa-text"></span></div>
+  <div id="hud" class="off">iniciando…</div>
+
+  <!-- Navegadores bloqueiam áudio automático até um gesto do usuário.
+       Numa tela real provisionada (Device Owner/kiosk) isso não existe; aqui damos 1 clique. -->
+  <div id="gate">
+    <h1>ISC · Agente de Tela</h1>
+    <p>Toque para iniciar o modo tela. Isso libera o áudio do PA System neste navegador.</p>
+    <button id="start">Iniciar tela</button>
+    <p style="font-size:.85rem">Numa Interactive Display provisionada (agente Android) o início é automático.</p>
+  </div>
+
+  <script src="agent.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+node_modules/
+data/state.json
+*.log
+# Android build outputs (caso compile aqui dentro)
+android-agent/.gradle/
+android-agent/build/
+android-agent/app/build/
+android-agent/local.properties
+android-agent/.idea/
+*.apk

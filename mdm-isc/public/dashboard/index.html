@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ISC · MDM / DMS / PA — Painel</title>
+  <style>
+    :root {
+      --bg:#0e1116; --panel:#171c24; --panel2:#1f2733; --fg:#e8edf2; --muted:#9aa7b5;
+      --accent:#2ea8ff; --ok:#27c093; --off:#ff5d5d; --line:#2a3340; --warn:#ffb020;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg);
+      font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; font-size:15px; }
+    header { display:flex; align-items:center; gap:1rem; padding:14px 20px; background:var(--panel);
+      border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+    header h1 { font-size:1.05rem; margin:0; font-weight:650; }
+    header .pill { font-size:.78rem; color:var(--muted); background:var(--panel2);
+      padding:3px 10px; border-radius:999px; }
+    .wrap { max-width:1200px; margin:0 auto; padding:20px; display:grid; gap:20px;
+      grid-template-columns: 2fr 1fr; align-items:start; }
+    @media (max-width:900px){ .wrap{ grid-template-columns:1fr; } }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+    .card h2 { margin:0 0 12px; font-size:.95rem; letter-spacing:.02em; text-transform:uppercase; color:var(--muted); }
+    .devices { display:grid; gap:10px; }
+    .dev { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+    .dev .top { display:flex; align-items:center; gap:10px; }
+    .dot { width:10px; height:10px; border-radius:50%; background:var(--off); flex:none; box-shadow:0 0 0 3px rgba(255,93,93,.15); }
+    .dot.on { background:var(--ok); box-shadow:0 0 0 3px rgba(39,192,147,.18); }
+    .dev .name { font-weight:600; }
+    .dev .meta { color:var(--muted); font-size:.82rem; margin-left:auto; text-align:right; }
+    .dev .actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+    button { background:var(--panel); color:var(--fg); border:1px solid var(--line);
+      border-radius:8px; padding:6px 11px; font-size:.82rem; cursor:pointer; }
+    button:hover { border-color:var(--accent); }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#04121f; font-weight:650; }
+    button.danger { border-color:#5a2a2a; color:#ff9b9b; }
+    button.pa { background:#b00020; border-color:#b00020; color:#fff; font-weight:650; }
+    label { display:block; font-size:.8rem; color:var(--muted); margin:10px 0 4px; }
+    input, textarea, select { width:100%; background:var(--bg); color:var(--fg); border:1px solid var(--line);
+      border-radius:8px; padding:8px 10px; font-size:.88rem; font-family:inherit; }
+    textarea { min-height:120px; resize:vertical; font-family:ui-monospace,monospace; font-size:.8rem; }
+    .row { display:flex; gap:8px; }
+    .row > * { flex:1; }
+    .log { font-family:ui-monospace,monospace; font-size:.74rem; color:var(--muted);
+      max-height:220px; overflow:auto; line-height:1.6; }
+    .log b { color:var(--fg); }
+    .empty { color:var(--muted); font-size:.85rem; padding:10px 0; }
+    .side { display:grid; gap:20px; }
+    .hint { font-size:.76rem; color:var(--muted); margin-top:8px; line-height:1.5; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ISC · MDM / DMS / PA</h1>
+    <span class="pill" id="stat">—</span>
+    <span class="pill" id="conn">conectando…</span>
+  </header>
+
+  <div class="wrap">
+    <div class="main">
+      <div class="card">
+        <h2>Telas da frota</h2>
+        <div class="devices" id="devices"><div class="empty">Nenhuma tela registrada ainda. Abra o <a href="/agent/" style="color:var(--accent)">agente</a> em outra aba.</div></div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>Signage (DMS) — playlist global</h2>
+        <p class="hint">Array JSON de itens. Tipos: <code>html</code> (campo <code>html</code>), <code>image</code>/<code>video</code>/<code>url</code> (campo <code>url</code>), com <code>durationSec</code>.</p>
+        <textarea id="content"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="primary" id="saveContent">Publicar playlist em todas as telas</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h2>PA System — aviso sonoro</h2>
+        <label>Mensagem (TTS pt-BR)</label>
+        <textarea id="paText" style="min-height:70px">Atenção: recreio em cinco minutos.</textarea>
+        <label>Ou URL de áudio (opcional, sobrepõe o TTS)</label>
+        <input id="paAudio" placeholder="https://… .mp3" />
+        <div class="row">
+          <div>
+            <label>Alvo</label>
+            <select id="paTarget"><option value="all">Todas as telas</option></select>
+          </div>
+          <div>
+            <label>Volume</label>
+            <input id="paVolume" type="number" min="0" max="100" value="100" />
+          </div>
+        </div>
+        <div style="margin-top:12px"><button class="pa" id="sendPa" style="width:100%">🔊 Disparar aviso</button></div>
+        <p class="hint">Abre banner + fala nas telas selecionadas, escurecendo o signage durante o aviso (ducking).</p>
+      </div>
+
+      <div class="card">
+        <h2>Comando em massa (MDM)</h2>
+        <div class="row">
+          <button id="bulkReload">Recarregar todas</button>
+          <button id="bulkNext">Próx. slide</button>
+        </div>
+        <p class="hint">Ações por tela ficam no card de cada uma.</p>
+      </div>
+
+      <div class="card">
+        <h2>Auditoria</h2>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

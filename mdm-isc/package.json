@@ -1,0 +1,18 @@
+{
+  "name": "mdm-isc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MDM + DMS (digital signage) + PA System para displays Android/Tizen da ISC. Modelo agent-pull: a tela liga pra casa, o servidor nunca escaneia a rede.",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server/index.js",
+    "selftest": "node server/selftest.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}
